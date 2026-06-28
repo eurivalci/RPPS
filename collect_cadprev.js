@@ -50,11 +50,28 @@ function competenciaQuery(ano, mes) {
   return `dt_ano=${ano}&dt_mes=${mes}&`;
 }
 
-function filterByCompetencia(rows, ano, mes) {
+function filterByCompetencia(rows, ano, mes, opts = {}) {
+  const mesN = Number(mes);
+  const bimestre = Math.ceil(mesN / 2); // mês 5 -> bimestre 3
+  // A semântica de dt_mes_bimestre na DAIR_CARTEIRA é ambígua: pode ser o MÊS
+  // (1-12) ou o número do BIMESTRE (1-6). Em vez de adivinhar (e arriscar
+  // casar o bimestre errado), deixamos explícito. Default: tenta os dois e
+  // marca como ambíguo no diagnóstico. Defina opts.bimestreEhMes=true/false
+  // assim que confirmar na primeira carga real.
+  const modo = opts.bimestreEhMes; // true=mês, false=bimestre, undefined=ambos
   return rows.filter((r) => {
     const a = Number(r.dt_ano);
-    const m = Number(r.dt_mes != null ? r.dt_mes : r.dt_mes_bimestre);
-    return a === Number(ano) && (Number.isNaN(m) || m === Number(mes));
+    if (a !== Number(ano)) return false;
+    if (r.dt_mes != null && r.dt_mes !== '') {
+      return Number(r.dt_mes) === mesN; // tabelas mensais: sem ambiguidade
+    }
+    if (r.dt_mes_bimestre != null && r.dt_mes_bimestre !== '') {
+      const m = Number(r.dt_mes_bimestre);
+      if (modo === true) return m === mesN;        // confirmado: é mês
+      if (modo === false) return m === bimestre;   // confirmado: é bimestre
+      return m === mesN || m === bimestre;         // ambíguo: aceita os dois
+    }
+    return true; // sem campo de mês: filtra só por ano
   });
 }
 
@@ -65,7 +82,22 @@ async function coletarTabela(tabela, ano, mes) {
     extraQuery: competenciaQuery(ano, mes),
     httpOpts: { timeoutMs: 45000, retries: 4 },
   });
-  return filterByCompetencia(rows, ano, mes);
+  const filtrado = filterByCompetencia(rows, ano, mes);
+  // diagnóstico: se a API ignorou o filtro de competência na query, baixamos
+  // tudo e filtramos em memória — mostramos os dois números para você ver
+  // onde o volume some.
+  console.error(
+    `      [diag] ${tabela}: API retornou ${rows.length} linhas | `
+    + `${filtrado.length} após filtro ${ano}-${mes} | `
+    + `${new Set(filtrado.map((r) => r.nr_cnpj_entidade)).size} entes únicos`,
+  );
+  if (rows.length > 0 && filtrado.length === 0) {
+    const amostraMeses = [...new Set(rows.slice(0, 200).map(
+      (r) => `${r.dt_ano}-${r.dt_mes != null ? r.dt_mes : r.dt_mes_bimestre}`,
+    ))].slice(0, 8);
+    console.error(`      [diag] ⚠ filtro zerou! competências presentes na amostra: ${amostraMeses.join(', ')}`);
+  }
+  return filtrado;
 }
 
 /**

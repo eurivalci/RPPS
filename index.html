@@ -170,12 +170,21 @@ async function loadData(comp){
       fetch(`${API_BASE}?comp=${comp}`).then(r=>r.json()),
       fetch(`${API_BASE}?comp=${comp}&tipo=alertas`).then(r=>r.json()).catch(()=>({alertas:[]})),
     ]);
-    state.painel = p; state.alertas = a;
+    state.painel = p; state.alertas = a; state.modo='api';
   } else {
-    state.painel = DEMO.painel; state.alertas = DEMO.alertas;
+    // tenta dados reais ao lado do HTML (output/gold/painel_XXXXXX.json).
+    // se não existir, cai no DEMO embutido — e avisa o usuário.
+    try {
+      const p = await fetch(`output/gold/painel_${comp}.json`).then(r=>{if(!r.ok)throw 0;return r.json();});
+      const a = await fetch(`output/gold/alertas_${comp}.json`).then(r=>r.ok?r.json():{alertas:[]}).catch(()=>({alertas:[]}));
+      state.painel = p; state.alertas = a; state.modo='arquivo';
+    } catch(_){
+      state.painel = DEMO.painel; state.alertas = DEMO.alertas; state.modo='demo';
+    }
   }
   document.getElementById('comp-label').textContent =
-    `market share intelligence · ${comp}`;
+    `market share intelligence · ${comp}` + (state.modo==='demo' ? ' · ⚠ MODO DEMONSTRAÇÃO (3 entes de teste)' : ` · ${state.painel.kpis.n_entes} entes`);
+  document.getElementById('comp-label').style.color = state.modo==='demo' ? 'var(--warn)' : 'var(--txt3)';
   hydrateFilters();
   renderAll();
 }

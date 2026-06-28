@@ -174,6 +174,7 @@ async function paginate(baseUrl, {
   ];
   let conv = null;
   const all = [];
+  let firstPageSig = null; // assinatura da 1ª página, p/ detectar offset ignorado
   for (let page = 0; page < maxPages; page++) {
     const offset = page * pageSize;
     let rows;
@@ -196,6 +197,19 @@ async function paginate(baseUrl, {
       rows = extract(body);
     }
     if (!rows || rows.length === 0) break;
+
+    // Detecta API que ignora offset (devolve sempre a mesma página).
+    // Sem isso, paginação "trava" e você puxa só os primeiros `pageSize`.
+    const sig = `${rows.length}|${JSON.stringify(rows[0])}`.slice(0, 500);
+    if (page === 1 && sig === firstPageSig) {
+      throw new Error(
+        `Paginação por offset ignorada em ${baseUrl}: a página 2 é idêntica à 1. `
+        + `A API provavelmente exige outro parâmetro (cursor/page). `
+        + `Só os primeiros ${pageSize} registros seriam baixados — abortando para evitar dado parcial.`,
+      );
+    }
+    if (page === 0) firstPageSig = sig;
+
     all.push(...rows);
     if (rows.length < pageSize) break; // última página
   }
