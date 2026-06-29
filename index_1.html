@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel RPPS · Market Share Intelligence</title>
+<style>
+  :root{
+    --bg:#0d1117; --bg2:#161b22; --bg3:#1c2330; --line:#2a3240;
+    --txt:#e6edf3; --txt2:#9aa7b4; --txt3:#6b7785;
+    --casa:#3fb950; --conc:#f85149; --accent:#58a6ff; --warn:#d29922;
+    --r:10px; --mono:'SF Mono',ui-monospace,Menlo,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:14px;line-height:1.5}
+  .wrap{max-width:1280px;margin:0 auto;padding:20px}
+  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:4px}
+  header h1{font-size:20px;font-weight:600;letter-spacing:-.3px}
+  header .sub{color:var(--txt3);font-size:12px;font-family:var(--mono)}
+  .tabs{display:flex;gap:4px;margin:18px 0;border-bottom:1px solid var(--line)}
+  .tab{padding:9px 16px;cursor:pointer;color:var(--txt2);border-bottom:2px solid transparent;font-weight:500;font-size:13px}
+  .tab.on{color:var(--txt);border-color:var(--accent)}
+  .tab:hover{color:var(--txt)}
+  .filters{display:flex;gap:10px;flex-wrap:wrap;background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:12px;margin-bottom:16px}
+  .filters label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px}
+  .filters select,.filters input{background:var(--bg3);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:7px 9px;font-size:13px;min-width:130px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:18px}
+  .kpi{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+  .kpi .v{font-size:24px;font-weight:600;font-family:var(--mono);letter-spacing:-.5px}
+  .kpi .l{font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px;margin-top:3px}
+  .grid{display:grid;gap:14px}
+  .grid.two{grid-template-columns:1fr 1fr}
+  .card{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+  .card h2{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--txt2);margin-bottom:14px}
+  .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;font-size:13px}
+  .bar-row .nm{width:160px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar-track{flex:1;background:var(--bg3);border-radius:4px;height:20px;position:relative;overflow:hidden}
+  .bar-fill{height:100%;background:var(--accent);border-radius:4px;transition:width .4s}
+  .bar-row .vl{width:120px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--txt2);flex-shrink:0}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--txt3);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.4px;padding:8px 10px;border-bottom:1px solid var(--line)}
+  td{padding:9px 10px;border-bottom:1px solid var(--bg3)}
+  tr:hover td{background:var(--bg3)}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+  .pill.casa{background:rgba(63,185,80,.15);color:var(--casa)}
+  .pill.conc{background:rgba(248,81,73,.15);color:var(--conc)}
+  .sow{font-family:var(--mono);font-weight:600}
+  .alert{display:flex;gap:12px;padding:12px;border-radius:8px;margin-bottom:8px;border:1px solid var(--line);background:var(--bg3)}
+  .alert.risk{border-left:3px solid var(--conc)}
+  .alert.opp{border-left:3px solid var(--casa)}
+  .alert .ico{font-size:18px}
+  .alert .val{font-family:var(--mono);font-weight:600;font-size:15px}
+  .alert.risk .val{color:var(--conc)} .alert.opp .val{color:var(--casa)}
+  .alert .meta{font-size:12px;color:var(--txt3);margin-top:2px}
+  .muted{color:var(--txt3);font-size:12px}
+  .donut-wrap{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+  .legend{display:flex;flex-direction:column;gap:6px;font-size:12px}
+  .legend .it{display:flex;align-items:center;gap:7px}
+  .legend .sw{width:11px;height:11px;border-radius:3px}
+  .hidden{display:none}
+  .search-box{display:flex;gap:8px;margin-bottom:14px}
+  .search-box input{flex:1}
+  .empty{padding:40px;text-align:center;color:var(--txt3)}
+  @media(max-width:760px){.grid.two{grid-template-columns:1fr}.bar-row .nm{width:110px}.bar-row .vl{width:90px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Painel RPPS</h1>
+    <span class="sub" id="comp-label">market share intelligence · —</span>
+  </header>
+
+  <div class="tabs">
+    <div class="tab on" data-view="macro">Visão Macro</div>
+    <div class="tab" data-view="gerente">Por Gerente</div>
+    <div class="tab" data-view="ente">Raio-X do Ente</div>
+    <div class="tab" data-view="alertas">Alertas</div>
+  </div>
+
+  <div class="filters">
+    <label>Competência
+      <select id="f-comp"><option value="202505">2025 · Maio</option></select>
+    </label>
+    <label>Região
+      <select id="f-regiao"><option value="">Todas</option></select>
+    </label>
+    <label>UF
+      <select id="f-uf"><option value="">Todas</option></select>
+    </label>
+    <label>Gerente
+      <select id="f-gerente"><option value="">Todos</option></select>
+    </label>
+  </div>
+
+  <!-- TELA 1 -->
+  <section id="view-macro">
+    <div class="kpis" id="kpis"></div>
+    <div class="grid two">
+      <div class="card">
+        <h2>Market share por grupo · Pareto</h2>
+        <div id="pareto"></div>
+      </div>
+      <div class="card">
+        <h2>Concentração por UF</h2>
+        <div id="por-uf"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TELA 2 -->
+  <section id="view-gerente" class="hidden">
+    <div class="card">
+      <h2>Carteira atendida · Share of Wallet por gerente</h2>
+      <table id="tbl-gerente"><thead><tr>
+        <th>Gerente</th><th>Entes</th><th>AUM casa</th><th>AUM território</th><th>Share of Wallet</th><th>Penetração</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <!-- TELA 3 -->
+  <section id="view-ente" class="hidden">
+    <div class="card">
+      <h2>Raio-X do ente · composição da carteira</h2>
+      <div class="search-box">
+        <input id="ente-search" placeholder="Buscar por CNPJ do ente (14 dígitos)" maxlength="14">
+        <button id="ente-go" style="background:var(--accent);color:#0d1117;border:none;border-radius:6px;padding:0 16px;font-weight:600;cursor:pointer">Buscar</button>
+      </div>
+      <div id="ente-result"><div class="empty">Selecione um ente na lista ou busque por CNPJ.</div></div>
+      <table id="tbl-entes" style="margin-top:14px"><thead><tr>
+        <th>CNPJ ente</th><th>UF</th><th>Gerente</th><th>AUM</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <!-- TELA 4 -->
+  <section id="view-alertas" class="hidden">
+    <div class="card">
+      <h2>Alertas · oportunidades e riscos (ranqueados por valor)</h2>
+      <div id="alertas-list"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+'use strict';
+// ---------------------------------------------------------------------------
+// Config: em produção aponta para o proxy Vercel. Para demo offline, usa
+// FALLBACK embutido (o mesmo payload validado no ETL).
+// ---------------------------------------------------------------------------
+const API_BASE = ''; // ex.: 'https://painel-rpps.vercel.app/api/painel'
+const fmtBRL = n => 'R$ ' + Math.round(n).toLocaleString('pt-BR');
+const fmtCompact = n => {
+  if (n >= 1e9) return 'R$ ' + (n/1e9).toFixed(1) + ' bi';
+  if (n >= 1e6) return 'R$ ' + (n/1e6).toFixed(1) + ' mi';
+  if (n >= 1e3) return 'R$ ' + (n/1e3).toFixed(0) + ' mil';
+  return 'R$ ' + n;
+};
+
+// Payload de demonstração (idêntico ao Gold gerado pelo ETL).
+const DEMO = {"painel":{"competencia":"202505","gerado_em":"2026-06-28T12:38:38.807Z","kpis":{"aum_total":68700000,"n_entes":3,"n_grupos":3,"ticket_medio":22900000},"tela1_macro":{"por_grupo":[{"grupo":"Caixa Econômica Federal","aum":57000000,"share":82.97},{"grupo":"Bradesco","aum":8500000,"share":12.37},{"grupo":"Não Identificado","aum":3200000,"share":4.66}],"por_uf":[{"uf":"SP","regiao":"Sudeste","aum":42000000},{"uf":"RN","regiao":"Nordeste","aum":23500000},{"uf":"MG","regiao":"Sudeste","aum":3200000}],"por_uf_grupo":[{"uf":"RN","grupo":"Caixa Econômica Federal","aum":15000000},{"uf":"RN","grupo":"Bradesco","aum":8500000},{"uf":"SP","grupo":"Caixa Econômica Federal","aum":42000000},{"uf":"MG","grupo":"Não Identificado","aum":3200000}]},"tela2_gerentes":[{"gerente":"Bruno Lima","entes":1,"aum_casa":42000000,"aum_total_territorio":42000000,"share_of_wallet":100},{"gerente":"Ana Costa","entes":1,"aum_casa":15000000,"aum_total_territorio":23500000,"share_of_wallet":63.83},{"gerente":"Sem Carteira","entes":1,"aum_casa":0,"aum_total_territorio":3200000,"share_of_wallet":0}],"tela3_entes_index":[{"cnpj_ente":"46523130000100","uf":"SP","regiao":"Sudeste","gerente":"Bruno Lima","aum":42000000},{"cnpj_ente":"11447510000128","uf":"RN","regiao":"Nordeste","gerente":"Ana Costa","aum":23500000},{"cnpj_ente":"10935438000115","uf":"MG","regiao":"Sudeste","gerente":"Sem Carteira","aum":3200000}]},"alertas":{"gerado_em":"2026-06-28T12:38:38.821Z","total":3,"alertas":[{"tipo":"resgate_casa","ente":"11447510000128","grupo":"Caixa Econômica Federal","valor":-5000000,"gerente":"Ana Costa","insight":"Ente 11447510000128 resgatou R$ 5.000.000 da casa (Caixa Econômica Federal). Risco de churn — contato prioritário."},{"tipo":"dinheiro_novo_concorrente","ente":"11447510000128","grupo":"Bradesco","valor":3500000,"gerente":"Ana Costa","insight":"Ente 11447510000128 aplicou R$ 3.500.000 em Bradesco (concorrente). Oportunidade."},{"tipo":"dinheiro_novo_concorrente","ente":"10935438000115","grupo":"Não Identificado","valor":3200000,"gerente":"Sem Carteira","insight":"Ente 10935438000115 aplicou R$ 3.200.000 em Não Identificado (concorrente). Oportunidade."}]}};
+
+const DEMO_COMPOSICAO={"11447510000128":[{"grupo":"Caixa Econômica Federal","administrador":"CAIXA ECONOMICA FEDERAL","nome_fundo":"CAIXA FI BRASIL IRF-M TP RF LP","artigo_cmn":"Art. 7º, I, b","valor":15000000,"flag_casa":true},{"grupo":"Bradesco","administrador":"BRADESCO","nome_fundo":"BRADESCO FIC RF","artigo_cmn":"Art. 7º, III","valor":8500000,"flag_casa":false}],"46523130000100":[{"grupo":"Caixa Econômica Federal","administrador":"CAIXA ECONOMICA FEDERAL","nome_fundo":"CAIXA FI BRASIL IRF-M TP RF LP","artigo_cmn":"Art. 7º, I, b","valor":42000000,"flag_casa":true}],"10935438000115":[{"grupo":"Não Identificado","administrador":"","nome_fundo":"FUNDO EXCLUSIVO XPTO","artigo_cmn":"Art. 8º","valor":3200000,"flag_casa":false}]};
+let state = { painel:null, alertas:null, view:'macro', filtro:{regiao:'',uf:'',gerente:''} };
+
+async function loadData(comp){
+  if (API_BASE){
+    const [p,a] = await Promise.all([
+      fetch(`${API_BASE}?comp=${comp}`).then(r=>r.json()),
+      fetch(`${API_BASE}?comp=${comp}&tipo=alertas`).then(r=>r.json()).catch(()=>({alertas:[]})),
+    ]);
+    state.painel = p; state.alertas = a;
+  } else {
+    state.painel = DEMO.painel; state.alertas = DEMO.alertas;
+  }
+  document.getElementById('comp-label').textContent =
+    `market share intelligence · ${comp}`;
+  hydrateFilters();
+  renderAll();
+}
+
+function hydrateFilters(){
+  const p = state.painel;
+  const regioes = [...new Set(p.tela1_macro.por_uf.map(x=>x.regiao))].sort();
+  const ufs = [...new Set(p.tela1_macro.por_uf.map(x=>x.uf))].sort();
+  const gerentes = p.tela2_gerentes.map(x=>x.gerente).sort();
+  fill('f-regiao', regioes); fill('f-uf', ufs); fill('f-gerente', gerentes);
+}
+function fill(id, arr){
+  const sel = document.getElementById(id);
+  const first = sel.querySelector('option');
+  sel.innerHTML=''; sel.appendChild(first);
+  arr.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);});
+}
+
+// --- filtros aplicados aos dados em memória ---
+function applyUfFilter(rows, keyUf, keyReg){
+  const {regiao,uf} = state.filtro;
+  return rows.filter(r=>(!uf||r[keyUf]===uf)&&(!regiao||r[keyReg]===regiao));
+}
+
+function renderAll(){ renderMacro(); renderGerentes(); renderEntes(); renderAlertas(); }
+
+// TELA 1
+function renderMacro(){
+  const p = state.painel;
+  // KPIs
+  const k = p.kpis;
+  document.getElementById('kpis').innerHTML = [
+    ['AUM total do universo', fmtCompact(k.aum_total)],
+    ['RPPS no recorte', k.n_entes],
+    ['Grupos/gestores', k.n_grupos],
+    ['Ticket médio', fmtCompact(k.ticket_medio)],
+  ].map(([l,v])=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+
+  // Pareto por grupo
+  let grupos = p.tela1_macro.por_grupo.slice();
+  // se há filtro de UF, recalcula a partir de por_uf_grupo
+  if (state.filtro.uf){
+    const ug = p.tela1_macro.por_uf_grupo.filter(x=>x.uf===state.filtro.uf);
+    const tot = ug.reduce((s,x)=>s+x.aum,0)||1;
+    grupos = ug.map(x=>({grupo:x.grupo,aum:x.aum,share:+(x.aum/tot*100).toFixed(2)}))
+               .sort((a,b)=>b.aum-a.aum);
+  }
+  const max = Math.max(...grupos.map(g=>g.aum),1);
+  document.getElementById('pareto').innerHTML = grupos.slice(0,10).map(g=>{
+    const cor = g.grupo.includes('Não')? 'var(--txt3)' : 'var(--accent)';
+    return `<div class="bar-row"><span class="nm" title="${g.grupo}">${g.grupo}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${g.aum/max*100}%;background:${cor}"></div></div>
+      <span class="vl">${fmtCompact(g.aum)} · ${g.share}%</span></div>`;
+  }).join('');
+
+  // por UF
+  let ufs = applyUfFilter(p.tela1_macro.por_uf,'uf','regiao');
+  const maxU = Math.max(...ufs.map(u=>u.aum),1);
+  document.getElementById('por-uf').innerHTML = ufs.slice(0,12).map(u=>
+    `<div class="bar-row"><span class="nm">${u.uf} · ${u.regiao}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${u.aum/maxU*100}%"></div></div>
+      <span class="vl">${fmtCompact(u.aum)}</span></div>`).join('') || '<div class="empty">Sem dados no recorte.</div>';
+}
+
+// TELA 2
+function renderGerentes(){
+  let rows = state.painel.tela2_gerentes.slice();
+  if (state.filtro.gerente) rows = rows.filter(r=>r.gerente===state.filtro.gerente);
+  const tb = document.querySelector('#tbl-gerente tbody');
+  tb.innerHTML = rows.map(g=>{
+    const sowColor = g.share_of_wallet>=70?'var(--casa)':g.share_of_wallet>=40?'var(--warn)':'var(--conc)';
+    return `<tr>
+      <td>${g.gerente}</td><td>${g.entes}</td>
+      <td>${fmtCompact(g.aum_casa)}</td><td>${fmtCompact(g.aum_total_territorio)}</td>
+      <td class="sow" style="color:${sowColor}">${g.share_of_wallet}%</td>
+      <td><div class="bar-track" style="width:90px;display:inline-block;vertical-align:middle">
+        <div class="bar-fill" style="width:${g.share_of_wallet}%;background:${sowColor}"></div></div></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" class="empty">Sem gerentes no recorte.</td></tr>';
+}
+
+// TELA 3
+function renderEntes(){
+  let rows = state.painel.tela3_entes_index.slice();
+  const {uf,regiao,gerente} = state.filtro;
+  rows = rows.filter(r=>(!uf||r.uf===uf)&&(!regiao||r.regiao===regiao)&&(!gerente||r.gerente===gerente));
+  const tb = document.querySelector('#tbl-entes tbody');
+  tb.innerHTML = rows.slice(0,50).map(e=>
+    `<tr style="cursor:pointer" onclick="drillEnte('${e.cnpj_ente}')">
+      <td style="font-family:var(--mono)">${e.cnpj_ente}</td><td>${e.uf}</td>
+      <td>${e.gerente}</td><td>${fmtCompact(e.aum)}</td></tr>`).join('')
+    || '<tr><td colspan="4" class="empty">Sem entes no recorte.</td></tr>';
+}
+
+// drill-down do ente (Tela 3) — em produção chama /api/painel?ente=...
+async function drillEnte(cnpj){
+  let composicao;
+  if (API_BASE){
+    const r = await fetch(`${API_BASE}?comp=${currentComp()}&ente=${cnpj}`).then(x=>x.json());
+    composicao = r.composicao;
+  } else {
+    composicao = DEMO_COMPOSICAO[cnpj] || [];
+  }
+  const total = composicao.reduce((s,c)=>s+c.valor,0)||1;
+  const cores = ['#58a6ff','#3fb950','#d29922','#f85149','#a371f7','#39c5cf'];
+  let acc=0; const segs = composicao.map((c,i)=>{
+    const pct=c.valor/total*100; const seg={...c,pct,start:acc,color:cores[i%cores.length]}; acc+=pct; return seg;
+  });
+  const grad = segs.map(s=>`${s.color} ${s.start}% ${s.start+s.pct}%`).join(',');
+  document.getElementById('ente-result').innerHTML = `
+    <div class="muted" style="margin-bottom:10px">Ente <b style="color:var(--txt)">${cnpj}</b> · ${fmtBRL(total)} sob análise</div>
+    <div class="donut-wrap">
+      <div style="width:150px;height:150px;border-radius:50%;background:conic-gradient(${grad});
+        position:relative"><div style="position:absolute;inset:32px;background:var(--bg2);border-radius:50%"></div></div>
+      <div class="legend">${segs.map(s=>`<div class="it">
+        <span class="sw" style="background:${s.color}"></span>
+        <span>${s.grupo} <span class="muted">${s.pct.toFixed(1)}%</span>
+        ${s.flag_casa?'<span class="pill casa">casa</span>':'<span class="pill conc">concorrente</span>'}</span>
+      </div>`).join('')}</div>
+    </div>`;
+}
+function currentComp(){ return document.getElementById('f-comp').value; }
+
+// TELA 4
+function renderAlertas(){
+  const list = (state.alertas&&state.alertas.alertas)||[];
+  let rows = list;
+  if (state.filtro.gerente) rows = rows.filter(a=>a.gerente===state.filtro.gerente);
+  document.getElementById('alertas-list').innerHTML = rows.map(a=>{
+    const risk = a.tipo==='resgate_casa';
+    return `<div class="alert ${risk?'risk':'opp'}">
+      <span class="ico">${risk?'⚠':'↑'}</span>
+      <div style="flex:1">
+        <div class="val">${fmtBRL(Math.abs(a.valor))}</div>
+        <div>${a.insight}</div>
+        <div class="meta">gerente: ${a.gerente} · grupo: ${a.grupo}</div>
+      </div></div>`;
+  }).join('') || '<div class="empty">Nenhum alerta no recorte.</div>';
+}
+
+// --- navegação e eventos ---
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  t.classList.add('on');
+  state.view=t.dataset.view;
+  ['macro','gerente','ente','alertas'].forEach(v=>
+    document.getElementById('view-'+v).classList.toggle('hidden', v!==state.view));
+});
+['f-regiao','f-uf','f-gerente'].forEach(id=>{
+  document.getElementById(id).onchange=e=>{
+    const key=id.split('-')[1]; state.filtro[key]=e.target.value; renderAll();
+  };
+});
+document.getElementById('f-comp').onchange=e=>loadData(e.target.value);
+document.getElementById('ente-go').onclick=()=>{
+  const v=document.getElementById('ente-search').value.replace(/\D/g,'');
+  if(v.length===14) drillEnte(v);
+};
+
+loadData('202505');
+</script>
+</body>
+</html>

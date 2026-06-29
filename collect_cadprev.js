@@ -24,7 +24,28 @@ const {
   normalizeCnpj, normalizeIbge, parseBrNumber, paginate,
 } = require('../lib/core');
 
-const BASE = process.env.CADPREV_BASE || 'https://apicadprev.economia.gov.br';
+// Domínio atual confirmado no Conecta gov.br: apicadprev.trabalho.gov.br.
+// Mantemos o antigo como fallback. resolveBase() fixa o primeiro que responder.
+const BASES = process.env.CADPREV_BASE
+  ? [process.env.CADPREV_BASE]
+  : ['https://apicadprev.trabalho.gov.br', 'https://apicadprev.economia.gov.br'];
+
+let BASE = BASES[0];
+async function resolveBase() {
+  for (const b of BASES) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 20000);
+      const res = await fetch(`${b}/api-docs/`, { signal: ctrl.signal });
+      clearTimeout(t);
+      if (res.ok || res.status === 200 || res.status === 301 || res.status === 302) { BASE = b; return b; }
+    } catch (_) { /* tenta o próximo */ }
+  }
+  throw new Error(
+    'Nenhum host CADPREV respondeu (apicadprev.trabalho.gov.br / .economia.gov.br). '
+    + 'Rode `node diagnose.js` para identificar se é domínio, DNS ou firewall corporativo.',
+  );
+}
 
 const TABELAS = {
   fundos: 'DAIR_FUNDO_INVEST_ANALISADOS',
@@ -129,6 +150,8 @@ async function main() {
   const outDir = path.join(__dirname, '..', 'output', 'bronze', 'cadprev', comp);
   fs.mkdirSync(outDir, { recursive: true });
 
+  await resolveBase();
+  console.error(`[cadprev] usando base: ${BASE}`);
   console.error(`[cadprev] coletando competência ${comp} ...`);
   const result = {};
   for (const [nome, tabela] of Object.entries(TABELAS)) {
