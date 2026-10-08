@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RPPS Intelligence · Análise de Carteiras</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#11161f; --panel2:#161d28; --line:#222c3a; --line2:#2e3a4d;
+    --txt:#e8eef5; --txt2:#8b9bb0; --txt3:#5a6b80;
+    --casa:#2dd4a7; --conc:#ff5d6c; --accent:#4d9fff; --gold:#e0b341; --viol:#a78bfa;
+    --grad1:#4d9fff; --grad2:#2dd4a7;
+    --mono:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-columns:1fr;max-width:1400px;margin:0 auto;padding:18px}
+  /* header */
+  .top{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-bottom:14px;border-bottom:1px solid var(--line)}
+  .brand{display:flex;flex-direction:column}
+  .brand h1{font-size:17px;font-weight:700;letter-spacing:-.3px}
+  .brand .sub{font-size:11px;color:var(--txt3);font-family:var(--mono);margin-top:1px}
+  .top .spacer{flex:1}
+  .modepill{font-size:10px;font-family:var(--mono);padding:3px 9px;border-radius:20px;border:1px solid var(--line2)}
+  .modepill.demo{color:var(--gold);border-color:var(--gold)}
+  .modepill.real{color:var(--casa);border-color:var(--casa)}
+  /* filtros */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;padding:12px 0}
+  .filters label{display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px}
+  .filters select{background:var(--panel2);border:1px solid var(--line2);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;min-width:120px;cursor:pointer}
+  .filters select:focus{outline:none;border-color:var(--accent)}
+  /* tabs */
+  .tabs{display:flex;gap:2px;margin:6px 0 16px}
+  .tab{padding:8px 15px;cursor:pointer;color:var(--txt2);font-weight:500;font-size:12.5px;border-radius:7px 7px 0 0;border-bottom:2px solid transparent}
+  .tab.on{color:var(--txt);border-color:var(--accent);background:var(--panel)}
+  .tab:hover:not(.on){color:var(--txt);background:var(--panel2)}
+  /* kpis */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin-bottom:16px}
+  .kpi{background:linear-gradient(135deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:11px;padding:13px 14px;position:relative;overflow:hidden}
+  .kpi::after{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent);opacity:.7}
+  .kpi.casa::after{background:var(--casa)} .kpi.warn::after{background:var(--gold)} .kpi.viol::after{background:var(--viol)}
+  .kpi .v{font-size:21px;font-weight:700;font-family:var(--mono);letter-spacing:-.5px}
+  .kpi .l{font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin-top:3px}
+  .kpi .d{font-size:10px;color:var(--txt2);margin-top:4px;font-family:var(--mono)}
+  /* grid layout */
+  .grid{display:grid;gap:12px}
+  .grid.c2{grid-template-columns:1.3fr 1fr}
+  .grid.c3{grid-template-columns:repeat(3,1fr)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px}
+  .card h2{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--txt2);margin-bottom:13px;display:flex;align-items:center;gap:8px}
+  .card h2 .hint{font-size:9px;color:var(--txt3);font-weight:400;text-transform:none;letter-spacing:0}
+  /* barras */
+  .bars{display:flex;flex-direction:column;gap:7px}
+  .bar-row{display:flex;align-items:center;gap:9px;font-size:12.5px;cursor:pointer;padding:2px;border-radius:5px}
+  .bar-row:hover{background:var(--panel2)}
+  .bar-row .rank{width:18px;color:var(--txt3);font-family:var(--mono);font-size:10px;text-align:right}
+  .bar-row .nm{width:150px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar-track{flex:1;background:var(--panel2);border-radius:4px;height:18px;position:relative;overflow:hidden}
+  .bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--grad1),var(--grad2));transition:width .5s cubic-bezier(.4,0,.2,1)}
+  .bar-fill.un{background:var(--txt3)}
+  .bar-fill.casa{background:linear-gradient(90deg,var(--casa),#3fe8bd)}
+  .bar-row .vl{width:130px;text-align:right;font-family:var(--mono);font-size:11px;color:var(--txt2);flex-shrink:0}
+  .bar-row .vl b{color:var(--txt)}
+  /* tabela */
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;color:var(--txt3);font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:8px 9px;border-bottom:1px solid var(--line2);position:sticky;top:0;background:var(--panel)}
+  th.num,td.num{text-align:right;font-family:var(--mono)}
+  td{padding:8px 9px;border-bottom:1px solid var(--panel2)}
+  tr.clk{cursor:pointer}
+  tr.clk:hover td{background:var(--panel2)}
+  .tbl-wrap{max-height:520px;overflow-y:auto;border-radius:8px}
+  .pill{display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:600;font-family:var(--mono)}
+  .pill.casa{background:rgba(45,212,167,.15);color:var(--casa)}
+  .pill.conc{background:rgba(255,93,108,.13);color:var(--conc)}
+  .pill.un{background:rgba(90,107,128,.18);color:var(--txt2)}
+  /* donut */
+  .donut-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+  .donut{width:140px;height:140px;border-radius:50%;position:relative;flex-shrink:0}
+  .donut .hole{position:absolute;inset:30px;background:var(--panel);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .donut .hole .big{font-size:15px;font-weight:700;font-family:var(--mono)}
+  .donut .hole .sml{font-size:9px;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px}
+  .legend{display:flex;flex-direction:column;gap:5px;font-size:11.5px;flex:1;min-width:160px}
+  .legend .it{display:flex;align-items:center;gap:7px}
+  .legend .sw{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+  .legend .lnm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .legend .lvl{font-family:var(--mono);color:var(--txt2);font-size:10px}
+  /* breadcrumb / drill */
+  .crumb{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--txt2);margin-bottom:12px;flex-wrap:wrap}
+  .crumb a{color:var(--accent);cursor:pointer;text-decoration:none}
+  .crumb a:hover{text-decoration:underline}
+  .crumb .sep{color:var(--txt3)}
+  /* search */
+  .search{display:flex;gap:8px;margin-bottom:12px}
+  .search input{flex:1;background:var(--panel2);border:1px solid var(--line2);color:var(--txt);border-radius:8px;padding:9px 12px;font-size:13px}
+  .search input:focus{outline:none;border-color:var(--accent)}
+  .empty{padding:36px;text-align:center;color:var(--txt3);font-size:12px}
+  .hidden{display:none}
+  .mini{font-size:10px;color:var(--txt3);font-family:var(--mono)}
+  /* botões */
+  .btn{background:var(--panel2);border:1px solid var(--line2);color:var(--txt);border-radius:8px;padding:8px 13px;font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans)}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.primary{background:var(--accent);color:#0a0e14;border-color:var(--accent);font-weight:600}
+  .btn.primary:hover{opacity:.9;color:#0a0e14}
+  /* destaque minha carteira */
+  tr.mine td:first-child{border-left:2px solid var(--casa);padding-left:7px}
+  .tag-mine{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--casa);margin-right:5px;vertical-align:middle}
+  /* modal */
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .modal{background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:22px;max-width:560px;width:100%;max-height:85vh;overflow-y:auto}
+  .modal h3{font-size:15px;margin-bottom:6px}
+  .modal p{font-size:12px;color:var(--txt2);margin-bottom:16px}
+  .map-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .map-row label{width:150px;font-size:12px;color:var(--txt2)}
+  .map-row select{flex:1;background:var(--panel2);border:1px solid var(--line2);color:var(--txt);border-radius:7px;padding:8px;font-size:12.5px}
+  .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+  .drop{border:1.5px dashed var(--line2);border-radius:10px;padding:26px;text-align:center;color:var(--txt3);font-size:12.5px;cursor:pointer;margin-bottom:8px}
+  .drop:hover{border-color:var(--accent);color:var(--txt2)}
+  .ok-note{font-size:11.5px;color:var(--casa);margin-top:8px}
+  .warn-note{font-size:11.5px;color:var(--gold);margin-top:8px}
+  @media(max-width:860px){.grid.c2,.grid.c3{grid-template-columns:1fr}.bar-row .nm{width:110px}.bar-row .vl{width:96px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <div class="brand">
+      <h1>RPPS Intelligence</h1>
+      <span class="sub">análise de carteiras · market share · CADPREV</span>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" id="btn-upload">📎 Carteira dos gerentes</button>
+    <span class="modepill" id="mode">carregando…</span>
+  </div>
+
+  <div class="filters">
+    <label>Competência<select id="f-comp"><option value="202505">2025 · Maio</option></select></label>
+    <label>Região<select id="f-regiao"><option value="">Todas</option></select></label>
+    <label>UF<select id="f-uf"><option value="">Todas</option></select></label>
+    <label>Gerente<select id="f-gerente"><option value="">Todos</option></select></label>
+  </div>
+
+  <div class="tabs">
+    <div class="tab on" data-v="visao">Visão Geral</div>
+    <div class="tab" data-v="grupos">Gestoras</div>
+    <div class="tab" data-v="entes">Entes (RPPS)</div>
+    <div class="tab" data-v="enquadra">Enquadramento</div>
+    <div class="tab" data-v="gerentes">Gerentes</div>
+    <div class="tab" data-v="dados">Dados</div>
+  </div>
+
+  <div id="views"></div>
+</div>
+
+<script>
+'use strict';
+const API_BASE='';
+const DEMO={painel:{"competencia":"202505","gerado_em":"2026-07-01T00:25:25.183Z","kpis":{"aum_total":65000000,"n_entes":2,"n_grupos":4,"ticket_medio":32500000,"aum_casa":30000000,"share_casa":46.15,"pct_nao_identificado":4.62,"hhi":3439},"tela1_macro":{"por_grupo":[{"grupo":"Itaú Unibanco","aum":30000000,"share":46.15},{"grupo":"Banco do Brasil","aum":20000000,"share":30.77},{"grupo":"Caixa Econômica Federal","aum":12000000,"share":18.46},{"grupo":"Não Identificado","aum":3000000,"share":4.62}],"por_uf":[{"uf":"CE","regiao":"Nordeste","aum":65000000}],"por_uf_grupo":[{"uf":"CE","grupo":"Itaú Unibanco","aum":30000000},{"uf":"CE","grupo":"Banco do Brasil","aum":20000000},{"uf":"CE","grupo":"Caixa Econômica Federal","aum":12000000},{"uf":"CE","grupo":"Não Identificado","aum":3000000}]},"tela2_gerentes":[{"gerente":"Ana Costa","entes":1,"aum_casa":30000000,"aum_total_territorio":50000000,"share_of_wallet":60},{"gerente":"Sem Carteira","entes":1,"aum_casa":0,"aum_total_territorio":15000000,"share_of_wallet":0}],"tela3_entes_index":[{"cnpj_ente":"07533656000119","nome_ente":"São Gonçalo do Amarante","uf":"CE","regiao":"Nordeste","gerente":"Ana Costa","aum":50000000,"n_grupos":2},{"cnpj_ente":"10393593000157","nome_ente":"Icapuí","uf":"CE","regiao":"Nordeste","gerente":"Sem Carteira","aum":15000000,"n_grupos":2}],"entes_detalhe":[{"cnpj_ente":"07533656000119","nome_ente":"São Gonçalo do Amarante","uf":"CE","regiao":"Nordeste","gerente":"Ana Costa","aum":50000000,"por_grupo":[{"k":"Itaú Unibanco","v":30000000},{"k":"Banco do Brasil","v":20000000}],"por_artigo":[{"k":"7.1.b","v":30000000},{"k":"8","v":20000000}],"por_segmento":[],"posicoes":[{"fundo":"ITAU INSTITUCIONAL RENDA FIXA REFERENCIADO DI","grupo":"Itaú Unibanco","gestora":"ITAU UNIBANCO S.A.","artigo":"7.1.b","segmento":"","valor":30000000},{"fundo":"BB PREVIDENCIARIO RENDA FIXA IRF-M1","grupo":"Banco do Brasil","gestora":"BB GESTAO DE RECURSOS DTVM","artigo":"8","segmento":"","valor":20000000}]},{"cnpj_ente":"10393593000157","nome_ente":"Icapuí","uf":"CE","regiao":"Nordeste","gerente":"Sem Carteira","aum":15000000,"por_grupo":[{"k":"Caixa Econômica Federal","v":12000000},{"k":"Não Identificado","v":3000000}],"por_artigo":[{"k":"8.III","v":12000000},{"k":"7","v":3000000}],"por_segmento":[],"posicoes":[{"fundo":"CAIXA FI ACOES BDR NIVEL I","grupo":"Caixa Econômica Federal","gestora":"CAIXA ECONOMICA FEDERAL","artigo":"8.III","segmento":"","valor":12000000},{"fundo":"FUNDO REGIONAL DESCONHECIDO XYZ","grupo":"Não Identificado","gestora":"FUNDO REGIONAL DESCONHECIDO XYZ","artigo":"7","segmento":"","valor":3000000}]}],"grupo_para_entes":{"Itaú Unibanco":[{"cnpj_ente":"07533656000119","nome_ente":"São Gonçalo do Amarante","uf":"CE","aum":30000000}],"Banco do Brasil":[{"cnpj_ente":"07533656000119","nome_ente":"São Gonçalo do Amarante","uf":"CE","aum":20000000}],"Caixa Econômica Federal":[{"cnpj_ente":"10393593000157","nome_ente":"Icapuí","uf":"CE","aum":12000000}],"Não Identificado":[{"cnpj_ente":"10393593000157","nome_ente":"Icapuí","uf":"CE","aum":3000000}]},"por_artigo":[{"artigo":"7.1.b","aum":30000000,"share":46.15},{"artigo":"8","aum":20000000,"share":30.77},{"artigo":"8.III","aum":12000000,"share":18.46},{"artigo":"7","aum":3000000,"share":4.62}],"por_segmento":[{"segmento":"Sem segmento","aum":65000000,"share":100}]}};
+let S={painel:null,view:'visao',filtro:{regiao:'',uf:'',gerente:''},drill:null};
+
+const fmtFull=n=>'R$ '+Math.round(n).toLocaleString('pt-BR');
+const fmtC=n=>{const a=Math.abs(n);if(a>=1e9)return 'R$ '+(n/1e9).toFixed(2)+' bi';if(a>=1e6)return 'R$ '+(n/1e6).toFixed(1)+' mi';if(a>=1e3)return 'R$ '+(n/1e3).toFixed(0)+' mil';return 'R$ '+Math.round(n);};
+const pct=(a,b)=>b?(a/b*100):0;
+const CORES=['#4d9fff','#2dd4a7','#e0b341','#a78bfa','#ff5d6c','#39c5cf','#f59e6b','#8b9bb0','#c084fc','#34d399','#fbbf24','#fb7185'];
+const corGrupo=(g,i)=>g==='Não Identificado'?'#5a6b80':CORES[i%CORES.length];
+
+async function load(comp){
+  let p=null;
+  if(API_BASE){ try{p=await fetch(`${API_BASE}?comp=${comp}`).then(r=>r.json());}catch(_){}}
+  if(!p){ try{p=await fetch(`output/gold/painel_${comp}.json`).then(r=>{if(!r.ok)throw 0;return r.json();});S.mode='arquivo';}catch(_){p=DEMO.painel;S.mode='demo';} }
+  else S.mode='api';
+  S.painel=p;
+  const md=document.getElementById('mode');
+  md.textContent=S.mode==='demo'?'⚠ demonstração ('+p.kpis.n_entes+' entes teste)':p.kpis.n_entes+' RPPS · '+p.competencia;
+  md.className='modepill '+(S.mode==='demo'?'demo':'real');
+  hydrateFilters(); render();
+}
+function hydrateFilters(){
+  const p=S.painel;
+  fill('f-regiao',[...new Set(p.tela1_macro.por_uf.map(x=>x.regiao))].sort());
+  fill('f-uf',[...new Set(p.tela1_macro.por_uf.map(x=>x.uf))].sort());
+  fill('f-gerente',p.tela2_gerentes.map(x=>x.gerente).filter(g=>g!=='Sem Carteira').sort());
+}
+function fill(id,arr){const s=document.getElementById(id);const f=s.querySelector('option');s.innerHTML='';s.appendChild(f);arr.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;s.appendChild(o);});}
+
+// ---- filtragem do detalhe por ente conforme filtros globais ----
+function entesFiltrados(){
+  const {regiao,uf,gerente}=S.filtro;
+  return S.painel.entes_detalhe.filter(e=>(!regiao||e.regiao===regiao)&&(!uf||e.uf===uf)&&(!gerente||e.gerente===gerente));
+}
+// recalcula agregação por grupo a partir dos entes filtrados
+function grupoAgg(){
+  const m=new Map();let tot=0;
+  for(const e of entesFiltrados())for(const g of e.por_grupo){m.set(g.k,(m.get(g.k)||0)+g.v);tot+=g.v;}
+  return {arr:[...m].map(([grupo,aum])=>({grupo,aum,share:+pct(aum,tot).toFixed(2)})).sort((a,b)=>b.aum-a.aum),tot};
+}
+function artigoAgg(){
+  const m=new Map();let tot=0;
+  for(const e of entesFiltrados())for(const a of e.por_artigo){m.set(a.k,(m.get(a.k)||0)+a.v);tot+=a.v;}
+  return {arr:[...m].map(([artigo,aum])=>({artigo,aum,share:+pct(aum,tot).toFixed(2)})).sort((a,b)=>b.aum-a.aum),tot};
+}
+function segmentoAgg(){
+  const m=new Map();let tot=0;
+  for(const e of entesFiltrados())for(const s of e.por_segmento){m.set(s.k,(m.get(s.k)||0)+s.v);tot+=s.v;}
+  return {arr:[...m].map(([segmento,aum])=>({segmento,aum,share:+pct(aum,tot).toFixed(2)})).sort((a,b)=>b.aum-a.aum),tot};
+}
+
+function barras(items,getName,getVal,getShare,opts={}){
+  const max=Math.max(...items.map(getVal),1);
+  return '<div class="bars">'+items.map((it,i)=>{
+    const nm=getName(it),v=getVal(it),sh=getShare?getShare(it):null;
+    const un=nm==='Não Identificado';const casa=opts.casaSet&&opts.casaSet.has(nm);
+    return `<div class="bar-row" ${opts.onclick?`onclick="${opts.onclick}('${encodeURIComponent(nm)}')"`:''}>
+      <span class="rank">${i+1}</span>
+      <span class="nm" title="${nm}">${nm}</span>
+      <div class="bar-track"><div class="bar-fill ${un?'un':casa?'casa':''}" style="width:${v/max*100}%"></div></div>
+      <span class="vl"><b>${fmtC(v)}</b>${sh!=null?' · '+sh.toFixed(1)+'%':''}</span></div>`;
+  }).join('')+'</div>';
+}
+
+function donut(items,getName,getVal,centerLabel){
+  const tot=items.reduce((s,x)=>s+getVal(x),0)||1;let acc=0;
+  const segs=items.slice(0,8).map((x,i)=>{const v=getVal(x),p=v/tot*100,s={nm:getName(x),v,p,start:acc,c:corGrupo(getName(x),i)};acc+=p;return s;});
+  const grad=segs.map(s=>`${s.c} ${s.start}% ${s.start+s.p}%`).join(',');
+  return `<div class="donut-wrap">
+    <div class="donut" style="background:conic-gradient(${grad})"><div class="hole"><span class="big">${fmtC(tot)}</span><span class="sml">${centerLabel||'AUM'}</span></div></div>
+    <div class="legend">${segs.map(s=>`<div class="it"><span class="sw" style="background:${s.c}"></span><span class="lnm" title="${s.nm}">${s.nm}</span><span class="lvl">${s.p.toFixed(1)}%</span></div>`).join('')}</div>
+  </div>`;
+}
+
+// ============ VIEWS ============
+function render(){
+  ['f-regiao','f-uf','f-gerente'].forEach(id=>{document.getElementById(id).value=S.filtro[id.split('-')[1]];});
+  const v=S.view;const el=document.getElementById('views');
+  if(v==='visao')el.innerHTML=viewVisao();
+  else if(v==='grupos')el.innerHTML=viewGrupos();
+  else if(v==='entes')el.innerHTML=viewEntes();
+  else if(v==='enquadra')el.innerHTML=viewEnquadra();
+  else if(v==='gerentes')el.innerHTML=viewGerentes();
+  else if(v==='dados')el.innerHTML=viewDados();
+}
+
+function kpiRow(){
+  const g=grupoAgg();const entes=entesFiltrados();
+  const aum=g.tot;const ni=g.arr.find(x=>x.grupo==='Não Identificado');
+  const hhi=g.arr.reduce((s,x)=>s+x.share**2,0);
+  const top=g.arr[0];
+  return `<div class="kpis">
+    <div class="kpi"><div class="v">${fmtC(aum)}</div><div class="l">AUM total</div></div>
+    <div class="kpi"><div class="v">${entes.length}</div><div class="l">RPPS</div></div>
+    <div class="kpi casa"><div class="v">${g.arr.filter(x=>x.grupo!=='Não Identificado').length}</div><div class="l">Gestoras</div></div>
+    <div class="kpi"><div class="v">${entes.length?fmtC(aum/entes.length):'—'}</div><div class="l">Ticket médio</div></div>
+    <div class="kpi viol"><div class="v">${Math.round(hhi)}</div><div class="l">HHI concentração</div><div class="d">${hhi>2500?'alta':hhi>1500?'moderada':'baixa'}</div></div>
+    <div class="kpi warn"><div class="v">${ni?ni.share.toFixed(1):'0'}%</div><div class="l">Não identificado</div><div class="d">${ni?fmtC(ni.aum):'—'}</div></div>
+  </div>`;
+}
+
+function viewVisao(){
+  const g=grupoAgg();const uf=ufAgg();
+  return kpiRow()+`
+  <div class="grid c2">
+    <div class="card"><h2>Market share por gestora <span class="hint">· clique para ver os RPPS</span></h2>
+      ${barras(g.arr.slice(0,12),x=>x.grupo,x=>x.aum,x=>x.share,{onclick:'drillGrupo'})}</div>
+    <div class="card"><h2>Composição do mercado</h2>${donut(g.arr,x=>x.grupo,x=>x.aum,'AUM total')}</div>
+  </div>
+  <div class="grid c2" style="margin-top:12px">
+    <div class="card"><h2>Concentração por UF <span class="hint">· clique para filtrar</span></h2>
+      ${barras(uf.slice(0,14),x=>x.uf+' · '+x.regiao,x=>x.aum,null,{onclick:'drillUf'})}</div>
+    <div class="card"><h2>Top 10 maiores RPPS <span class="hint">· clique para o raio-x</span></h2>
+      ${barras(entesFiltrados().slice(0,10),x=>x.nome_ente||x.cnpj_ente,x=>x.aum,null,{onclick:'drillEnte'})}</div>
+  </div>`;
+}
+function ufAgg(){
+  const m=new Map();
+  for(const e of entesFiltrados())m.set(e.uf,(m.get(e.uf)||0)+e.aum);
+  return [...m].map(([uf,aum])=>({uf,regiao:regiaoDe(uf),aum})).sort((a,b)=>b.aum-a.aum);
+}
+function regiaoDe(uf){const r=S.painel.tela1_macro.por_uf.find(x=>x.uf===uf);return r?r.regiao:'';}
+
+function viewGrupos(){
+  const g=grupoAgg();
+  if(S.drill&&S.drill.tipo==='grupo'){
+    const grupo=S.drill.valor;const lista=(S.painel.grupo_para_entes[grupo]||[]).filter(filtraEnteByGlobal);
+    const tot=lista.reduce((s,e)=>s+e.aum,0);
+    return `<div class="crumb"><a onclick="clearDrill()">Gestoras</a><span class="sep">›</span><span>${grupo}</span></div>
+    ${kpiMini([['RPPS investidos',lista.length],['AUM na gestora',fmtC(tot)],['Ticket médio',lista.length?fmtC(tot/lista.length):'—']])}
+    <div class="card"><h2>RPPS que investem em ${grupo} <span class="hint">· clique para o raio-x do ente</span></h2>
+      <div class="tbl-wrap"><table><thead><tr><th>RPPS</th><th>UF</th><th class="num">AUM na gestora</th><th class="num">% do total do ente</th></tr></thead><tbody>
+      ${lista.map(e=>{const det=S.painel.entes_detalhe.find(x=>x.cnpj_ente===e.cnpj_ente);const tEnte=det?det.aum:e.aum;
+        return `<tr class="clk" onclick="goEnte('${e.cnpj_ente}')"><td>${e.nome_ente||e.cnpj_ente}</td><td>${e.uf}</td><td class="num">${fmtC(e.aum)}</td><td class="num">${pct(e.aum,tEnte).toFixed(1)}%</td></tr>`;}).join('')}
+      </tbody></table></div></div>`;
+  }
+  return kpiRow()+`<div class="card"><h2>Ranking de gestoras <span class="hint">· clique para ver os RPPS investidos</span></h2>
+    <div class="tbl-wrap"><table><thead><tr><th>#</th><th>Gestora / Grupo</th><th class="num">AUM</th><th class="num">Market share</th><th class="num">RPPS</th></tr></thead><tbody>
+    ${g.arr.map((x,i)=>{const n=(S.painel.grupo_para_entes[x.grupo]||[]).filter(filtraEnteByGlobal).length;
+      return `<tr class="clk" onclick="goGrupo('${encodeURIComponent(x.grupo)}')"><td class="mini">${i+1}</td><td>${x.grupo==='Não Identificado'?'<span class="pill un">não identificado</span>':x.grupo}</td><td class="num">${fmtC(x.aum)}</td><td class="num">${x.share.toFixed(2)}%</td><td class="num">${n}</td></tr>`;}).join('')}
+    </tbody></table></div></div>`;
+}
+function filtraEnteByGlobal(e){const{regiao,uf,gerente}=S.filtro;const d=S.painel.entes_detalhe.find(x=>x.cnpj_ente===e.cnpj_ente);if(!d)return true;return(!regiao||d.regiao===regiao)&&(!uf||d.uf===uf)&&(!gerente||d.gerente===gerente);}
+
+function viewEntes(){
+  if(S.drill&&S.drill.tipo==='ente')return raioX(S.drill.valor);
+  const list=entesFiltrados();
+  return kpiRow()+`<div class="card"><h2>Todos os RPPS <span class="hint">· ${list.length} entes · clique para o raio-x</span></h2>
+    <div class="search"><input id="ente-q" placeholder="Buscar por nome ou CNPJ do ente…" oninput="filtraTabela()"></div>
+    <div class="tbl-wrap"><table><thead><tr><th>RPPS</th><th>UF</th><th>Gerente</th><th class="num">AUM</th><th class="num">Gestoras</th></tr></thead><tbody id="entes-tb">
+    ${list.map(e=>linhaEnte(e)).join('')}
+    </tbody></table></div></div>`;
+}
+function linhaEnte(e){return `<tr class="clk ente-row ${e.mine?'mine':''}" data-q="${(e.nome_ente+' '+e.cnpj_ente).toLowerCase()}" onclick="goEnte('${e.cnpj_ente}')"><td>${e.mine?'<span class="tag-mine"></span>':''}${e.nome_ente||e.cnpj_ente}</td><td>${e.uf}</td><td>${e.gerente==='Sem Carteira'?'<span class="mini">sem carteira</span>':e.gerente}</td><td class="num">${fmtC(e.aum)}</td><td class="num">${e.por_grupo.length}</td></tr>`;}
+function filtraTabela(){const q=document.getElementById('ente-q').value.toLowerCase();document.querySelectorAll('.ente-row').forEach(r=>{r.style.display=r.dataset.q.includes(q)?'':'none';});}
+
+function raioX(cnpj){
+  const e=S.painel.entes_detalhe.find(x=>x.cnpj_ente===cnpj);
+  if(!e)return '<div class="empty">Ente não encontrado.</div>';
+  const casaShare=e.por_grupo.filter(g=>(S.painel.kpis.share_casa>0)&&false).reduce((s,g)=>s+g.v,0);
+  return `<div class="crumb"><a onclick="clearDrill()">Entes</a><span class="sep">›</span><span>${e.nome_ente||cnpj}</span></div>
+  ${kpiMini([['AUM total',fmtC(e.aum)],['UF',e.uf],['Gerente',e.gerente],['Gestoras',e.por_grupo.length],['Posições',e.posicoes.length]])}
+  <div class="grid c2">
+    <div class="card"><h2>Composição por gestora</h2>${donut(e.por_grupo,x=>x.k,x=>x.v,'carteira')}</div>
+    <div class="card"><h2>Enquadramento · Resolução CMN</h2>${barras(e.por_artigo.slice(0,10),x=>'Art. '+x.k,x=>x.v,x=>+pct(x.v,e.aum).toFixed(1))}</div>
+  </div>
+  <div class="card" style="margin-top:12px"><h2>Posições da carteira <span class="hint">· ${e.posicoes.length} ativos</span></h2>
+    <div class="tbl-wrap"><table><thead><tr><th>Fundo</th><th>Gestora</th><th>Segmento</th><th>Art. CMN</th><th class="num">Valor</th><th class="num">%</th></tr></thead><tbody>
+    ${e.posicoes.map(p=>`<tr><td title="${p.fundo}">${(p.fundo||'').slice(0,44)}</td><td>${p.grupo==='Não Identificado'?'<span class="pill un">n/i</span>':p.grupo}</td><td class="mini">${p.segmento||'—'}</td><td class="mini">${p.artigo||'—'}</td><td class="num">${fmtC(p.valor)}</td><td class="num">${pct(p.valor,e.aum).toFixed(1)}%</td></tr>`).join('')}
+    </tbody></table></div></div>`;
+}
+
+function viewEnquadra(){
+  const a=artigoAgg();const s=segmentoAgg();
+  return kpiRow()+`<div class="grid c2">
+    <div class="card"><h2>Alocação por enquadramento <span class="hint">· Resolução CMN 4.963/2021</span></h2>${barras(a.arr.slice(0,14),x=>'Art. '+x.artigo,x=>x.aum,x=>x.share)}</div>
+    <div class="card"><h2>Distribuição por segmento</h2>${donut(s.arr,x=>x.segmento,x=>x.aum,'AUM')}</div>
+  </div>
+  <div class="card" style="margin-top:12px"><h2>Detalhe por segmento</h2>
+    <div class="tbl-wrap"><table><thead><tr><th>Segmento</th><th class="num">AUM</th><th class="num">Share</th></tr></thead><tbody>
+    ${s.arr.map(x=>`<tr><td>${x.segmento}</td><td class="num">${fmtC(x.aum)}</td><td class="num">${x.share.toFixed(2)}%</td></tr>`).join('')}
+    </tbody></table></div></div>`;
+}
+
+function viewGerentes(){
+  const ger=S.painel.tela2_gerentes.filter(g=>!S.filtro.gerente||g.gerente===S.filtro.gerente);
+  return kpiRow()+`<div class="card"><h2>Carteira por gerente <span class="hint">· Share of Wallet = AUM na casa ÷ AUM total do território</span></h2>
+    <div class="tbl-wrap"><table><thead><tr><th>Gerente</th><th class="num">RPPS</th><th class="num">AUM casa</th><th class="num">AUM território</th><th class="num">Share of Wallet</th></tr></thead><tbody>
+    ${ger.map(g=>{const c=g.share_of_wallet>=70?'var(--casa)':g.share_of_wallet>=40?'var(--gold)':'var(--conc)';
+      return `<tr><td>${g.gerente}</td><td class="num">${g.entes}</td><td class="num">${fmtC(g.aum_casa)}</td><td class="num">${fmtC(g.aum_total_territorio)}</td><td class="num" style="color:${c};font-weight:700">${g.share_of_wallet}%</td></tr>`;}).join('')}
+    </tbody></table></div>
+    ${S.painel.kpis.share_casa===0?'<div class="mini" style="margin-top:10px">⚠ Nenhuma gestora marcada como "casa". Defina flagCasa:true no lib/core.js para ativar o Share of Wallet.</div>':''}</div>`;
+}
+
+function kpiMini(pairs){return '<div class="kpis">'+pairs.map(([l,v])=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('')+'</div>';}
+
+// ============ CARTEIRA DOS GERENTES (upload xlsx, cruzamento por raiz) ============
+// S.carteira: Map raiz(8díg) -> {gerente, extra:{...}}
+S.carteira = null;
+
+function raiz8(cnpj){return String(cnpj||'').replace(/\D/g,'').padStart(14,'0').slice(0,8);}
+
+// gerente de um ente (pela raiz), quando há carteira carregada
+function gerenteDoEnte(cnpjEnte){
+  if(!S.carteira) return null;
+  const hit=S.carteira.get(raiz8(cnpjEnte));
+  return hit?hit.gerente:null;
+}
+function isMine(cnpjEnte){ return S.carteira ? S.carteira.has(raiz8(cnpjEnte)) : false; }
+
+// aplica a carteira sobre entes_detalhe (sobrescreve gerente) e recalcula tela2
+function aplicarCarteira(){
+  if(!S.carteira) return;
+  let atribuidos=0;
+  for(const e of S.painel.entes_detalhe){
+    const g=gerenteDoEnte(e.cnpj_ente);
+    if(g){ e.gerente=g; e.mine=true; atribuidos++; } else { e.mine=false; }
+  }
+  // recalcula tela2_gerentes a partir do cruzamento + flag casa
+  const porGer=new Map();
+  for(const e of S.painel.entes_detalhe){
+    const g=e.gerente||'Sem Carteira';
+    if(!porGer.has(g)) porGer.set(g,{gerente:g,entes:new Set(),aum_casa:0,aum_total_territorio:0});
+    const o=porGer.get(g); o.entes.add(e.cnpj_ente);
+    for(const grp of e.por_grupo){ o.aum_total_territorio+=grp.v; if(GRUPOS_CASA.has(grp.k)) o.aum_casa+=grp.v; }
+  }
+  S.painel.tela2_gerentes=[...porGer.values()].map(o=>({
+    gerente:o.gerente,entes:o.entes.size,aum_casa:o.aum_casa,aum_total_territorio:o.aum_total_territorio,
+    share_of_wallet:o.aum_total_territorio?+pct(o.aum_casa,o.aum_total_territorio).toFixed(2):0,
+  })).sort((a,b)=>b.aum_total_territorio-a.aum_total_territorio);
+  hydrateFilters();
+  return atribuidos;
+}
+// grupos marcados como casa (derivado do payload: onde flag_casa apareceu)
+const GRUPOS_CASA=new Set(["Itaú Unibanco"]);
+
+// ---- linhas planas para a aba Dados / CSV ----
+function linhasPlanas(){
+  const {regiao,uf,gerente}=S.filtro;
+  const out=[];
+  for(const e of S.painel.entes_detalhe){
+    if(regiao&&e.regiao!==regiao)continue;
+    if(uf&&e.uf!==uf)continue;
+    if(gerente&&e.gerente!==gerente)continue;
+    for(const p of e.posicoes){
+      out.push({
+        raiz_ente:raiz8(e.cnpj_ente),cnpj_ente:e.cnpj_ente,ente:e.nome_ente,uf:e.uf,regiao:e.regiao,
+        gerente:e.gerente,minha_carteira:S.carteira?(e.mine?'Sim':'Não'):'—',
+        gestora:p.grupo,fundo:p.fundo,segmento:p.segmento,artigo_cmn:p.artigo,valor:Math.round(p.valor*100)/100,
+      });
+    }
+  }
+  return out;
+}
+function baixarCSV(){
+  const rows=linhasPlanas();
+  if(!rows.length){alert('Sem dados no recorte atual.');return;}
+  const cols=Object.keys(rows[0]);
+  const esc=v=>{const s=String(v??'');return /[";\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+  const csv=[cols.join(';'),...rows.map(r=>cols.map(c=>esc(r[c])).join(';'))].join('\n');
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=`rpps_carteiras_${S.painel.competencia}.csv`;a.click();URL.revokeObjectURL(a.href);
+}
+
+function viewDados(){
+  const rows=linhasPlanas();
+  const head=`<div class="crumb"><span>${rows.length.toLocaleString('pt-BR')} posições no recorte atual</span></div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button class="btn primary" onclick="baixarCSV()">⬇ Exportar CSV</button>
+      <span class="mini" style="align-self:center">respeita os filtros de região, UF e gerente</span></div>`;
+  const cols=[['ente','RPPS'],['uf','UF'],['gerente','Gerente'],['gestora','Gestora'],['fundo','Fundo'],['segmento','Segmento'],['artigo_cmn','Art. CMN'],['valor','Valor']];
+  return head+`<div class="card"><div class="tbl-wrap" style="max-height:600px"><table><thead><tr>
+    ${S.carteira?'<th></th>':''}${cols.map(c=>`<th class="${c[0]==='valor'?'num':''}">${c[1]}</th>`).join('')}</tr></thead><tbody>
+    ${rows.slice(0,2000).map(r=>`<tr class="${r.minha_carteira==='Sim'?'mine':''}">
+      ${S.carteira?`<td>${r.minha_carteira==='Sim'?'<span class="tag-mine"></span>':''}</td>`:''}
+      <td>${r.ente}</td><td>${r.uf}</td><td>${r.gerente==='Sem Carteira'?'<span class="mini">—</span>':r.gerente}</td>
+      <td>${r.gestora==='Não Identificado'?'<span class="pill un">n/i</span>':r.gestora}</td>
+      <td title="${r.fundo}">${(r.fundo||'').slice(0,38)}</td><td class="mini">${r.segmento||'—'}</td>
+      <td class="mini">${r.artigo_cmn||'—'}</td><td class="num">${fmtC(r.valor)}</td></tr>`).join('')}
+    </tbody></table></div>
+    ${rows.length>2000?`<div class="mini" style="margin-top:8px">Mostrando 2.000 de ${rows.length.toLocaleString('pt-BR')} linhas. O CSV exporta tudo.</div>`:''}</div>`;
+}
+
+// ============ UPLOAD MODAL ============
+let _wbRows=null,_wbCols=null;
+function abrirUpload(){
+  const bg=document.createElement('div');bg.className='modal-bg';bg.id='modal-bg';
+  bg.innerHTML=`<div class="modal">
+    <h3>Carteira dos gerentes</h3>
+    <p>Suba um arquivo Excel (.xlsx). O cruzamento usa a <b>raiz do CNPJ do ente</b> (8 primeiros dígitos). Você escolhe as colunas depois de subir.</p>
+    <div class="drop" id="drop">📄 Clique para escolher o arquivo .xlsx<input type="file" id="file" accept=".xlsx,.xls" style="display:none"></div>
+    <div id="map-area"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="fecharModal()">Cancelar</button>
+      <button class="btn primary" id="btn-aplicar" style="display:none" onclick="confirmarCarteira()">Aplicar cruzamento</button>
+    </div></div>`;
+  document.body.appendChild(bg);
+  bg.addEventListener('click',e=>{if(e.target===bg)fecharModal();});
+  const drop=document.getElementById('drop'),file=document.getElementById('file');
+  drop.onclick=()=>file.click();
+  file.onchange=e=>lerArquivo(e.target.files[0]);
+}
+function fecharModal(){const m=document.getElementById('modal-bg');if(m)m.remove();_wbRows=null;_wbCols=null;}
+function lerArquivo(f){
+  if(!f)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const json=XLSX.utils.sheet_to_json(ws,{defval:''});
+      if(!json.length){alert('Planilha vazia.');return;}
+      _wbRows=json;_wbCols=Object.keys(json[0]);
+      montarMapeamento(f.name,json.length);
+    }catch(err){alert('Erro ao ler o arquivo: '+err.message);}
+  };
+  reader.readAsArrayBuffer(f);
+}
+function montarMapeamento(nome,n){
+  const opts=c=>_wbCols.map(col=>`<option value="${col}" ${new RegExp(c,'i').test(col)?'selected':''}>${col}</option>`).join('');
+  document.getElementById('drop').innerHTML=`✓ <b>${nome}</b> · ${n} linhas`;
+  document.getElementById('map-area').innerHTML=`
+    <div class="mini" style="margin:12px 0 10px">Associe as colunas do seu arquivo:</div>
+    <div class="map-row"><label>Raiz/CNPJ do ente *</label><select id="col-cnpj">${opts('cnpj|raiz|ente')}</select></div>
+    <div class="map-row"><label>Gerente *</label><select id="col-ger">${opts('gerente|resp|consultor|gestor')}</select></div>
+    <div class="map-row"><label>Território (opcional)</label><select id="col-terr"><option value="">—</option>${opts('territ|regi|praca|agencia')}</select></div>`;
+  document.getElementById('btn-aplicar').style.display='';
+}
+function confirmarCarteira(){
+  const cCnpj=document.getElementById('col-cnpj').value,cGer=document.getElementById('col-ger').value,cTerr=document.getElementById('col-terr').value;
+  const m=new Map();const colis=[];
+  for(const row of _wbRows){
+    const r=raiz8(row[cCnpj]);const g=String(row[cGer]||'').trim();
+    if(!r||r==='00000000'||!g)continue;
+    if(m.has(r)&&m.get(r).gerente!==g)colis.push(r);
+    m.set(r,{gerente:g,territorio:cTerr?String(row[cTerr]||'').trim():''});
+  }
+  S.carteira=m;
+  const atr=aplicarCarteira();
+  fecharModal();
+  S.view='gerentes';setTab('gerentes');S.drill=null;render();
+  // feedback
+  const md=document.getElementById('mode');
+  const msg=`${m.size} entes na carteira · ${atr} RPPS cruzados${colis.length?' · ⚠ '+colis.length+' raízes com gerentes divergentes':''}`;
+  const bar=document.createElement('div');bar.className='crumb';bar.style.color='var(--casa)';
+  bar.innerHTML=`✓ Carteira aplicada: ${msg}`;
+  document.getElementById('views').prepend(bar);
+}
+
+
+// ---- drill handlers ----
+function drillGrupo(g){S.view='grupos';S.drill={tipo:'grupo',valor:decodeURIComponent(g)};setTab('grupos');render();}
+function goGrupo(g){S.drill={tipo:'grupo',valor:decodeURIComponent(g)};render();}
+function drillUf(label){const uf=decodeURIComponent(label).split(' · ')[0];S.filtro.uf=uf;S.drill=null;render();}
+function drillEnte(name){const e=entesFiltrados().find(x=>(x.nome_ente||x.cnpj_ente)===decodeURIComponent(name));if(e)goEnte(e.cnpj_ente);}
+function goEnte(cnpj){S.view='entes';S.drill={tipo:'ente',valor:cnpj};setTab('entes');render();}
+function clearDrill(){S.drill=null;render();}
+function setTab(v){document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.v===v));}
+
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{setTab(t.dataset.v);S.view=t.dataset.v;S.drill=null;render();});
+['f-regiao','f-uf','f-gerente'].forEach(id=>document.getElementById(id).onchange=e=>{S.filtro[id.split('-')[1]]=e.target.value;S.drill=null;render();});
+document.getElementById('f-comp').onchange=e=>load(e.target.value);
+document.getElementById('btn-upload').onclick=abrirUpload;
+
+load('202505');
+</script>
+</body>
+</html>

@@ -31,8 +31,26 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  normalizeCnpj, normalizeIbge, parseBrNumber, regiaoFromUf, resolveGrupo,
+  normalizeCnpj, normalizeIbge, parseBrNumber, regiaoFromUf,
+  resolveGrupo, resolveGrupoPorNome,
 } = require('./lib/core');
+
+// normaliza nome de fundo para chave de join textual (maiúsculas, sem acento/pontuação)
+function normalizaNome(s) {
+  return String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+}
+
+// gera rótulo legível de uma gestora não mapeada a conglomerado.
+// Ex: "BB GESTAO DE RECURSOS - DISTRIBUIDORA DE TITULOS..." -> "BB Gestao De Recursos"
+function rotuloGestora(noEmpresa) {
+  let s = String(noEmpresa || '').split(/ - |\/|,/)[0].trim();
+  s = s.replace(/\b(S\.?A\.?|LTDA|DTVM|DISTRIBUIDORA.*|GESTORA DE RECURSOS|ADMINISTRADORA.*|ASSET MANAGEMENT|GESTAO DE RECURSOS LTDA)\b/gi, '').trim();
+  if (!s) s = String(noEmpresa || '').slice(0, 40);
+  // title case simples
+  return s.toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase()).trim() || 'Não Classificado';
+}
 
 function parseArgs(argv) {
   const out = {};
@@ -82,19 +100,22 @@ function buildSilver(bronze, carteiraInterna) {
   // índice fundo CVM por CNPJ
   const cvmByCnpj = new Map(dimFundo.map((f) => [f.cnpj_fundo, f]));
 
-  // índice instituição credenciada por (ente, fundo) a partir do DAIR_FUNDO_INVEST_ANALISADOS
-  const instByEnteFundo = new Map();
+  // índices da DAIR_FUNDO_INVEST_ANALISADOS para enriquecer a carteira.
+  // Join confirmado: ente + no_fundo normalizado (94% de match no CE).
+  // O id_ativo NÃO casa; o CNPJ do fundo não existe na carteira.
+  const instByEnteFundo = new Map(); // chave precisa: ente|nome
+  const instByFundoGlobal = new Map(); // fallback: nome global (vínculo fundo→gestora é estável)
   for (const r of fundos) {
     const ente = normalizeCnpj(r.nr_cnpj_entidade);
-    const fundo = normalizeCnpj(r.nr_cnpj_fundo);
-    if (ente && fundo) {
-      instByEnteFundo.set(`${ente}|${fundo}`, {
-        cnpj_instituicao: normalizeCnpj(r.nr_cnpj_empresa),
-        nome_instituicao: r.no_empresa || '',
-        cnpj_fundo: fundo,
-        nome_fundo: r.no_fundo || '',
-      });
-    }
+    const nomeNorm = normalizaNome(r.no_fundo);
+    if (!nomeNorm) continue;
+    const reg = {
+      cnpj_empresa: normalizeCnpj(r.nr_cnpj_empresa),
+      no_empresa: r.no_empresa || '',
+      cnpj_fundo: normalizeCnpj(r.nr_cnpj_fundo),
+    };
+    if (ente) instByEnteFundo.set(`${ente}|${nomeNorm}`, reg);
+    if (!instByFundoGlobal.has(nomeNorm)) instByFundoGlobal.set(nomeNorm, reg);
   }
 
   const fato = [];
@@ -105,40 +126,57 @@ function buildSilver(bronze, carteiraInterna) {
     const ente = normalizeCnpj(c.nr_cnpj_entidade);
     if (!ente) continue;
     const uf = String(c.sg_uf || '').toUpperCase();
-    const valor = parseBrNumber(c.vl_total_atual != null ? c.vl_total_atual : c.vl_atual_ativo);
+    // vl_total_atual é o valor da posição (confirmado nos dados reais).
+    // vl_atual_ativo é valor unitário da cota — NÃO usar. vl_patrimonio é o
+    // patrimônio total do RPPS, repetido por linha — NÃO somar.
+    const valor = parseBrNumber(c.vl_total_atual);
     if (valor <= 0) continue;
     totalAum += valor;
 
-    // tenta achar o fundo correspondente (o id_ativo às vezes carrega o CNPJ)
-    const fundoCnpj = normalizeCnpj(c.id_ativo) || null;
-    const instKey = fundoCnpj ? `${ente}|${fundoCnpj}` : null;
-    const inst = instKey ? instByEnteFundo.get(instKey) : null;
-
-    // resolve administrador/gestor: prioridade CVM (mais confiável p/ taxonomia),
-    // fallback instituição credenciada do próprio CADPREV.
-    const cvm = fundoCnpj ? cvmByCnpj.get(fundoCnpj) : null;
-    const cnpjParaGrupo = (cvm && cvm.cnpj_admin)
-      || (inst && inst.cnpj_instituicao)
+    // A CARTEIRA não traz CNPJ do fundo (id_ativo é código interno).
+    // Resolvemos o grupo pelo nome textual (no_fundo); refinamos com a
+    // instituição credenciada (DAIR_FUNDO_INVEST_ANALISADOS) quando casar.
+    const nomeFundo = c.no_fundo || '';
+    const nomeNorm = normalizaNome(nomeFundo);
+    // 1) join com FUNDO_INVEST_ANALISADOS: ente+nome (preciso) ou nome global
+    const inst = instByEnteFundo.get(`${ente}|${nomeNorm}`)
+      || instByFundoGlobal.get(nomeNorm)
       || null;
-    const grupo = resolveGrupo(cnpjParaGrupo);
+
+    // 2) resolve o grupo/gestora:
+    //    a gestora real vem de no_empresa (ex "BB GESTAO DE RECURSOS - DTVM").
+    //    Normalizamos ao conglomerado por nome; se não mapear, usamos a própria
+    //    gestora como rótulo (melhor que "Não Identificado"); se nem isso, nome do fundo.
+    let grupo;
+    if (inst && inst.no_empresa) {
+      const g = resolveGrupoPorNome(inst.no_empresa);
+      grupo = g.grupo !== 'Não Identificado'
+        ? g
+        : { grupo: rotuloGestora(inst.no_empresa), flagCasa: false };
+    } else {
+      grupo = resolveGrupoPorNome(nomeFundo);
+    }
+
+    const administrador = (inst && inst.no_empresa) || nomeFundo;
+    const cnpjGestora = inst && inst.cnpj_empresa;
 
     const ger = carteiraInterna.get(ente) || { gerente: 'Sem Carteira', territorio: uf };
-
-    if (!cvm && !inst) semIdent++;
+    if (grupo.grupo === 'Não Identificado') semIdent++;
 
     fato.push({
       cnpj_ente: ente,
       uf,
       regiao: regiaoFromUf(uf),
-      ibge: normalizeIbge(c.cd_ibge || c.co_ibge), // se presente
-      cnpj_fundo: fundoCnpj,
-      nome_fundo: (cvm && cvm.denominacao) || (inst && inst.nome_fundo) || c.no_fundo || '',
-      administrador: (cvm && cvm.administrador) || (inst && inst.nome_instituicao) || '',
-      gestor: (cvm && cvm.gestor) || '',
+      ibge: normalizeIbge(c.cd_ibge || c.co_ibge),
+      nome_ente: c.no_ente || '',
+      nome_fundo: nomeFundo,
+      administrador,
+      cnpj_gestora: cnpjGestora || '',
       grupo: grupo.grupo,
       flag_casa: grupo.flagCasa,
       artigo_cmn: c.pc_cmn || '',
       segmento: c.no_segmento || '',
+      tipo_ativo: c.no_tipo_ativo || '',
       valor,
       gerente: ger.gerente,
       territorio: ger.territorio,
@@ -210,16 +248,69 @@ function buildGold(silver, comp) {
     };
   }).sort((a, b) => b.aum_total_territorio - a.aum_total_territorio);
 
-  // Tela 3 — Raio-X por ente (índice compacto; detalhe é servido sob demanda)
-  const entes = [...groupSum(fato, (r) => r.cnpj_ente)]
-    .map(([cnpj, aum]) => {
-      const sample = fato.find((r) => r.cnpj_ente === cnpj);
-      return {
-        cnpj_ente: cnpj, uf: sample.uf, regiao: sample.regiao,
-        gerente: sample.gerente, aum,
-      };
-    })
+  // Tela 3 — Raio-X por ente. Agora com DETALHE completo embutido para
+  // drill-down sem ida ao servidor: composição por grupo e por artigo CMN.
+  const entesMap = new Map();
+  for (const r of fato) {
+    if (!entesMap.has(r.cnpj_ente)) {
+      entesMap.set(r.cnpj_ente, {
+        cnpj_ente: r.cnpj_ente, nome_ente: r.nome_ente, uf: r.uf, regiao: r.regiao,
+        gerente: r.gerente, aum: 0,
+        por_grupo: new Map(), por_artigo: new Map(), por_segmento: new Map(),
+        posicoes: [],
+      });
+    }
+    const e = entesMap.get(r.cnpj_ente);
+    e.aum += r.valor;
+    e.por_grupo.set(r.grupo, (e.por_grupo.get(r.grupo) || 0) + r.valor);
+    if (r.artigo_cmn) e.por_artigo.set(r.artigo_cmn, (e.por_artigo.get(r.artigo_cmn) || 0) + r.valor);
+    if (r.segmento) e.por_segmento.set(r.segmento, (e.por_segmento.get(r.segmento) || 0) + r.valor);
+    if (r.valor > 0) e.posicoes.push({ fundo: r.nome_fundo, grupo: r.grupo, gestora: r.administrador, artigo: r.artigo_cmn, segmento: r.segmento, valor: r.valor });
+  }
+  const mapToArr = (m) => [...m].map(([k, v]) => ({ k, v })).sort((a, b) => b.v - a.v);
+  const entesDetalhe = [...entesMap.values()].map((e) => ({
+    cnpj_ente: e.cnpj_ente, nome_ente: e.nome_ente, uf: e.uf, regiao: e.regiao,
+    gerente: e.gerente, aum: e.aum,
+    por_grupo: mapToArr(e.por_grupo),
+    por_artigo: mapToArr(e.por_artigo),
+    por_segmento: mapToArr(e.por_segmento),
+    posicoes: e.posicoes.sort((a, b) => b.valor - a.valor).slice(0, 50),
+  })).sort((a, b) => b.aum - a.aum);
+
+  // índice leve (para listas e tabelas)
+  const entes = entesDetalhe.map((e) => ({
+    cnpj_ente: e.cnpj_ente, nome_ente: e.nome_ente, uf: e.uf, regiao: e.regiao,
+    gerente: e.gerente, aum: e.aum, n_grupos: e.por_grupo.length,
+  }));
+
+  // Drill-down: para cada GRUPO, a lista de entes que investem nele (clicar no Pareto)
+  const entesPorGrupo = {};
+  for (const r of fato) {
+    (entesPorGrupo[r.grupo] = entesPorGrupo[r.grupo] || {});
+    entesPorGrupo[r.grupo][r.cnpj_ente] = (entesPorGrupo[r.grupo][r.cnpj_ente] || 0) + r.valor;
+  }
+  const grupoParaEntes = {};
+  for (const [grupo, mapa] of Object.entries(entesPorGrupo)) {
+    grupoParaEntes[grupo] = Object.entries(mapa)
+      .map(([cnpj, aum]) => {
+        const e = entesMap.get(cnpj);
+        return { cnpj_ente: cnpj, nome_ente: e?.nome_ente || '', uf: e?.uf || '', aum };
+      })
+      .sort((a, b) => b.aum - a.aum);
+  }
+
+  // Distribuição por enquadramento (artigo CMN) e por segmento — indicadores macro
+  const porArtigo = [...groupSum(fato, (r) => r.artigo_cmn || 'Sem classificação')]
+    .map(([artigo, aum]) => ({ artigo, aum, share: +(aum / aumTotal * 100).toFixed(2) }))
     .sort((a, b) => b.aum - a.aum);
+  const porSegmento = [...groupSum(fato, (r) => r.segmento || 'Sem segmento')]
+    .map(([segmento, aum]) => ({ segmento, aum, share: +(aum / aumTotal * 100).toFixed(2) }))
+    .sort((a, b) => b.aum - a.aum);
+
+  // KPIs extras de BI
+  const aumCasa = fato.filter((r) => r.flag_casa).reduce((s, r) => s + r.valor, 0);
+  const naoIdent = fato.filter((r) => r.grupo === 'Não Identificado').reduce((s, r) => s + r.valor, 0);
+  const hhi = porGrupo.reduce((s, g) => s + (g.share ** 2), 0); // concentração de mercado
 
   return {
     competencia: comp,
@@ -229,10 +320,18 @@ function buildGold(silver, comp) {
       n_entes: entes.length,
       n_grupos: porGrupo.length,
       ticket_medio: entes.length ? aumTotal / entes.length : 0,
+      aum_casa: aumCasa,
+      share_casa: +(aumCasa / aumTotal * 100).toFixed(2),
+      pct_nao_identificado: +(naoIdent / aumTotal * 100).toFixed(2),
+      hhi: Math.round(hhi),
     },
     tela1_macro: { por_grupo: porGrupo, por_uf: porUf, por_uf_grupo: porUfGrupo },
     tela2_gerentes: porGerente,
     tela3_entes_index: entes,
+    entes_detalhe: entesDetalhe,
+    grupo_para_entes: grupoParaEntes,
+    por_artigo: porArtigo,
+    por_segmento: porSegmento,
   };
 }
 

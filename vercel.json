@@ -1,0 +1,7 @@
+{
+  "crons": [
+    { "path": "/api/ingest?tipo=cadprev", "schedule": "0 6 1 * *" },
+    { "path": "/api/ingest?tipo=cvm", "schedule": "0 5 * * 1" }
+  ],
+  "functions": { "api/*.js": { "maxDuration": 60 } }
+}

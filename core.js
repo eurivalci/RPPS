@@ -249,6 +249,55 @@ function resolveGrupo(cnpj14) {
   return GRUPOS_ECONOMICOS[raiz] || { grupo: 'Não Classificado', flagCasa: false };
 }
 
+// ---------------------------------------------------------------------------
+// Resolução de grupo por NOME do fundo (no_fundo da DAIR_CARTEIRA).
+// A CARTEIRA não traz CNPJ do fundo (id_ativo é código interno, ex "0268/268-1"),
+// então o vínculo com a instituição vem pelo texto de no_fundo, ex:
+//   "4 - Banco do Nordeste do Brasil S.A."  ->  Banco do Nordeste
+//   "SAFRA CARTEIRA PREMIUM MULTIMERCADO"   ->  Safra
+// Matching por palavra-chave, do mais específico ao mais genérico.
+// Marque flagCasa:true no grupo da sua instituição.
+// ---------------------------------------------------------------------------
+
+const GRUPOS_POR_NOME = [
+  // [regex de palavras-chave, nome do grupo, flagCasa]
+  [/banco do nordeste|\bbnb\b/i, 'Banco do Nordeste', false],
+  [/\bcaixa\b|\bcef\b/i, 'Caixa Econômica Federal', false],
+  [/banco do brasil|\bbb\b|\bbb[- ]|bb dtvm|bb asset/i, 'Banco do Brasil', false],
+  [/bradesco/i, 'Bradesco', false],
+  [/ita[uú]|unibanco/i, 'Itaú Unibanco', false],
+  [/santander/i, 'Santander', false],
+  [/safra/i, 'Safra', false],
+  [/\bbtg\b|pactual/i, 'BTG Pactual', false],
+  [/\bxp\b|xp invest|infinity/i, 'XP', false],
+  [/banrisul/i, 'Banrisul', false],
+  [/\bbrb\b/i, 'BRB', false],
+  [/sicredi/i, 'Sicredi', false],
+  [/sicoob|bancoob/i, 'Sicoob', false],
+  [/daycoval/i, 'Daycoval', false],
+  [/vinci/i, 'Vinci Partners', false],
+  [/western/i, 'Western Asset', false],
+  [/\bbnp\b|paribas/i, 'BNP Paribas', false],
+  [/\bjgp\b/i, 'JGP', false],
+  [/\bspx\b/i, 'SPX', false],
+  [/\bkinea\b/i, 'Kinea', false],
+  [/\bicatu\b/i, 'Icatu', false],
+  [/\bcredit\b|suisse/i, 'Credit Suisse', false],
+];
+
+/**
+ * Resolve grupo pelo nome textual do fundo/instituição.
+ * Retorna { grupo, flagCasa }. Sem match -> "Não Identificado".
+ */
+function resolveGrupoPorNome(nome) {
+  if (!nome) return { grupo: 'Não Identificado', flagCasa: false };
+  const s = String(nome);
+  for (const [re, grupo, flagCasa] of GRUPOS_POR_NOME) {
+    if (re.test(s)) return { grupo, flagCasa };
+  }
+  return { grupo: 'Não Identificado', flagCasa: false };
+}
+
 module.exports = {
   normalizeCnpj,
   isValidCnpj,
@@ -259,6 +308,8 @@ module.exports = {
   httpGetJson,
   paginate,
   resolveGrupo,
+  resolveGrupoPorNome,
   GRUPOS_ECONOMICOS,
+  GRUPOS_POR_NOME,
   UF_REGIAO,
 };
